@@ -1,0 +1,153 @@
+```{r}
+# install.packages(c("tidycensus", "sf", "tigris", "tidyverse", "lubridate", "ggplot2", "naniar", "skimr", "caret", "ggmap"))
+library(tidycensus)
+library(sf)
+library(tigris)
+
+# Load necessary libraries
+library(tidyverse)    # For data manipulation and visualization
+library(lubridate)    # For date/time manipulation
+library(ggplot2)      # For plotting
+library(naniar)       # For missing value visualization
+library(skimr)        # For quick data summary
+library(caret)        # For pre-processing functions
+library(ggmap)        # For geospatial visualization (optional)
+
+```
+
+
+DATA LOADING
+
+```{r}
+ev_data <- read.csv("../Dataset/Electric_Vehicle_Population_Data.csv")  # Replace with your dataset file
+```
+
+```{r}
+glimpse(ev_data)
+```
+```{r}
+skim(ev_data)
+```
+
+```{r}
+# View first few rows
+head(ev_data)
+
+# Check dimensions
+dim(ev_data)
+
+# Check column names
+names(ev_data)
+```
+
+DATA CLEANING
+
+```{r}
+# Check for missing values
+missing_summary <- ev_data %>% 
+  summarise_all(~sum(is.na(.))) %>% 
+  gather(variable, missing_count) %>% 
+  arrange(desc(missing_count))
+print(missing_summary)
+```
+
+```{r}
+# Visualize missing values
+gg_miss_var(ev_data) + 
+  labs(title = "Missing Values by Variable")
+```
+
+
+```{r}
+# More specific handling for your dataset
+ev_clean <- ev_data %>%
+  transmute(
+    
+    vin = replace_na(VIN..1.10., "NA"),
+    state = replace_na(State, "NA"),
+    
+    make = replace_na(Make, "NA"),
+    model = replace_na(Model, "NA"),
+    
+    # Numeric fields - replace with 0
+    electric_range = replace_na(Electric.Range, 0),
+    base_msrp = replace_na(Base.MSRP, 0),
+    legislative_district = replace_na(Legislative.District, 0),
+    postal_code = replace_na(Postal.Code, 0),
+    model_year = replace_na(Model.Year, 0),
+    
+    # Character fields - replace with NA or "Unknown"
+    county = replace_na(County, "NA"),
+    city = replace_na(City, "NA"),
+    electric_vehicle_type = replace_na(Electric.Vehicle.Type, "NA"),
+    cafv_eligibility = replace_na(Clean.Alternative.Fuel.Vehicle..CAFV..Eligibility, "NA"),
+    electric_utility = replace_na(Electric.Utility, "NA"),
+    
+    # Location data - special handling
+    vehicle_location = ifelse(is.na(Vehicle.Location), NA_character_, Vehicle.Location),
+    
+    # ID fields - leave as NA (or you might want to generate unique IDs)
+    dol_vehicle_id = ifelse(is.na(DOL.Vehicle.ID), NA_character_, DOL.Vehicle.ID),
+    
+    # Census tract - leave as NA or use 0 if it's numeric
+    census_tract = replace_na(X2020.Census.Tract, 0)  # Note: backticks if column name has special chars
+  )
+```
+
+
+```{r}
+# Check for missing values
+missing_summary_check <- ev_clean %>% 
+  summarise_all(~sum(is.na(.))) %>% 
+  gather(variable, missing_count) %>% 
+  arrange(desc(missing_count))
+
+print(missing_summary_check)
+```
+
+
+```{r}
+ev_clean <- ev_clean %>%
+  filter(state == "WA")
+```
+
+```{r}
+skim(ev_clean)
+```
+
+
+```{r}
+library(dplyr)
+
+
+ev_clean <- ev_clean %>%
+  mutate(make_model = paste(make, model, sep = " "))  # Concatenates with space
+
+print(ev_clean)
+```
+
+```{r}
+skim(ev_clean)
+```
+
+```{r}
+# Save dataset to a CSV file
+write.csv(ev_clean, "../Dataset/pre-processed-EV-dataset.csv", row.names = FALSE)
+```
+
+```{r}
+glimpse(ev_clean)
+```
+
+
+```{r}
+# Using scale() function
+ev_clean$electric_range_scaled <- as.numeric(scale(ev_clean$electric_range))
+
+# Verify
+summary(ev_clean$electric_range_scaled)
+```
+
+```{r}
+glimpse(ev_clean)
+```

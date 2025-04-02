@@ -1,0 +1,87 @@
+```{r}
+library(dplyr)
+library(tidyr)
+library(skimr)
+```
+
+```{r}
+data <- read.csv("D:/MS/CSP_571_Data _Preparation _and_Analysis/DPA-Project/Dataset/Alternative_Fueling_Stations.csv", stringsAsFactors = FALSE) # Load the dataset
+```
+
+```{r}
+glimpse(data)
+```
+
+```{r}
+skim(data)
+```
+
+```{r}
+# View first few rows
+head(data)
+
+# Check dimensions
+dim(data)
+
+# Check column names
+names(data)
+```
+
+```{r}
+# Display unique values of 'fuel_type_code' and 'state'
+unique_fuel_types <- unique(data$fuel_type_code)
+unique_states <- unique(data$state)
+
+cat("Unique fuel_type_code values:\n")
+print(unique_fuel_types)
+
+cat("Unique state values:\n")
+print(unique_states)
+```
+
+```{r}
+# Filter the dataset: Only electric stations (fuel_type_code "ELEC") in Washington state ("WA")
+filtered_data <- subset(data, fuel_type_code == "ELEC" & state == "WA")
+summary(filtered_data)
+```
+
+```{r}
+#Check for missing values in key features
+filtered_data %>%
+  summarise(
+    missing_fuel_type_code = sum(is.na(fuel_type_code)),
+    missing_state = sum(is.na(state)),
+    missing_city = sum(is.na(city)),
+    missing_country = sum(is.na(country)),
+    missing_latitude = sum(is.na(latitude)),
+    missing_longitude = sum(is.na(longitude))
+  ) %>%
+  print()
+```
+
+```{r}
+# Convert to appropriate data types
+data_converted <- filtered_data %>%
+  mutate(
+    fuel_type_code = as.factor(fuel_type_code),
+    state = as.factor(state),
+    city = as.factor(city),
+    country = as.factor(country)
+    # latitude and longitude remain numeric and do not need conversion
+  )
+```
+
+```{r}
+# Remove duplicate rows if any exist
+data_final <- data_converted %>%
+  distinct()
+```
+
+```{r}
+# View a summary of the preprocessed data
+glimpse(data_final)
+```
+
+```{r}
+write.csv(data_final, "Preprocessed_Electric_Stations_WA.csv", row.names = FALSE)
+```

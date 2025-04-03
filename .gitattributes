@@ -1,3 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 Implementation/sentiment140.csv filter=lfs diff=lfs merge=lfs -text
+Dataset/*.csv filter=lfs diff=lfs merge=lfs -text
+Dataset/*.csv filter=lfs diff=lfs merge=lfs -text

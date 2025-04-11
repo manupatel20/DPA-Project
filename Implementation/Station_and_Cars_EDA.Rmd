@@ -1,0 +1,148 @@
+```{r}
+# Load required libraries
+library(tidyverse)
+library(ggplot2)
+library(cluster)
+library(factoextra)
+
+# Read in the datasets
+ev_data <- read.csv("../Dataset/pre-processed-EV-dataset.csv")
+station_data <- read.csv("../Dataset/Preprocessed_Electric_Stations_WA.csv")
+```
+
+```{r}
+# Normalize city names for both datasets
+ev_data$city <- tolower(trimws(ev_data$city))
+station_data$city <- tolower(trimws(station_data$city))
+
+# Count number of EVs in each city
+ev_city_counts <- ev_data %>%
+  filter(city != "" & !is.na(city)) %>%
+  count(city, name = "ev_count") %>%
+  arrange(desc(ev_count))
+
+# Count number of charging stations in each city
+station_city_counts <- station_data %>%
+  filter(city != "" & !is.na(city)) %>%
+  count(city, name = "station_count") %>%
+  arrange(desc(station_count))
+
+# Join EV and Station counts by city
+ev_station_summary <- full_join(ev_city_counts, station_city_counts, by = "city") %>%
+  replace_na(list(ev_count = 0, station_count = 0)) %>%
+  arrange(desc(ev_count))  # Or use station_count for sorting by station data
+
+#print(ev_station_summary)
+
+# Join EV and Station counts by city
+ev_station_ratio <- full_join(ev_city_counts, station_city_counts, by = "city") %>%
+  replace_na(list(ev_count = 0, station_count = 0)) %>%
+  filter(station_count > 0) %>%  # Avoid division by zero
+  mutate(ev_to_station_ratio = ev_count / station_count) %>%
+  arrange(desc(ev_to_station_ratio))
+
+ev_station_ratio %>%
+  mutate(summary = paste0(city, ": ", ev_count, " EVs / ", station_count, " stations = Ratio: ", round(ev_to_station_ratio, 2))) %>%
+  pull(summary) %>%
+  head(10)
+
+```
+
+```{r}
+# Bubble Chart: EVs vs Stations with bubble size = ratio
+ggplot(ev_station_ratio, aes(x = ev_count, y = station_count, size = ev_to_station_ratio, label = city)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  scale_size_continuous(range = c(2, 15), name = "EV/Station Ratio") +
+  labs(title = "EVs vs Charging Stations by City",
+       x = "EV Count",
+       y = "Charging Station Count") +
+  theme_minimal() +
+  geom_text(check_overlap = TRUE, size = 3, vjust = -1)
+
+```
+
+```{r}
+# 1. Distribution of Electric Ranges (BEV vs PHEV)
+ev_filtered <- ev_data %>%
+  filter(electric_vehicle_type %in% c("Battery Electric Vehicle (BEV)",
+                                      "Plug-in Hybrid Electric Vehicle (PHEV)"))
+
+# Summary statistics
+ev_filtered %>%
+  group_by(electric_vehicle_type) %>%
+  summarise(
+    min_range = min(electric_range),
+    max_range = max(electric_range),
+    mean_range = mean(electric_range),
+    median_range = median(electric_range),
+    sd_range = sd(electric_range)
+  )
+
+# Boxplot
+ggplot(ev_filtered, aes(x = electric_vehicle_type, y = electric_range, fill = electric_vehicle_type)) +
+  geom_boxplot() +
+  labs(title = "Electric Range Comparison", x = "Vehicle Type", y = "Electric Range (miles)") +
+  theme_minimal()
+
+```
+
+```{r}
+# 2. Statistical Test (BEV vs PHEV Ranges)
+bev <- ev_filtered %>%
+  filter(electric_vehicle_type == "Battery Electric Vehicle (BEV)") %>%
+  pull(electric_range)
+
+phev <- ev_filtered %>%
+  filter(electric_vehicle_type == "Plug-in Hybrid Electric Vehicle (PHEV)") %>%
+  pull(electric_range)
+
+t.test(bev, phev)
+
+```
+
+```{r}
+# 3. Top 10 Cities by EV and Charging Station Counts (Separate)
+# EVs
+ev_city_counts %>%
+  top_n(10, ev_count) %>%
+  ggplot(aes(x = reorder(city, ev_count), y = ev_count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 Cities by EV Count", x = "City", y = "EVs")
+
+# Stations
+station_city_counts %>%
+  top_n(10, station_count) %>%
+  ggplot(aes(x = reorder(city, station_count), y = station_count)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +
+  coord_flip() +
+  labs(title = "Top 10 Cities by Charging Station Count", x = "City", y = "Stations")
+
+```
+
+```{r}
+# 4. KMeans Clustering of Charging Stations
+coords <- station_data %>%
+  select(latitude, longitude) %>%
+  na.omit()
+
+set.seed(42)
+kmeans_result <- kmeans(coords, centers = 5)
+coords$cluster <- as.factor(kmeans_result$cluster)
+
+ggplot(coords, aes(x = longitude, y = latitude, color = cluster)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Geographic Clusters of Charging Stations", x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+```
+
+```{r}
+# 5. Station Count per Cluster
+coords %>%
+  count(cluster, name = "stations_in_cluster") %>%
+  ggplot(aes(x = cluster, y = stations_in_cluster, fill = cluster)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Number of Charging Stations per Cluster", x = "Cluster", y = "Station Count") +
+  theme_minimal()
+```

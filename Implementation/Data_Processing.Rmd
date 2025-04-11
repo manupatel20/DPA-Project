@@ -62,38 +62,30 @@ gg_miss_var(ev_data) +
 # More specific handling for your dataset
 ev_clean <- ev_data %>%
   transmute(
-    
     vin = replace_na(VIN..1.10., "NA"),
     state = replace_na(State, "NA"),
-    
     make = replace_na(Make, "NA"),
     model = replace_na(Model, "NA"),
-    
-    # Numeric fields - replace with 0
     electric_range = replace_na(Electric.Range, 0),
     base_msrp = replace_na(Base.MSRP, 0),
     legislative_district = replace_na(Legislative.District, 0),
     postal_code = replace_na(Postal.Code, 0),
     model_year = replace_na(Model.Year, 0),
-    
-    # Character fields - replace with NA or "Unknown"
     county = replace_na(County, "NA"),
     city = replace_na(City, "NA"),
     electric_vehicle_type = replace_na(Electric.Vehicle.Type, "NA"),
     cafv_eligibility = replace_na(Clean.Alternative.Fuel.Vehicle..CAFV..Eligibility, "NA"),
     electric_utility = replace_na(Electric.Utility, "NA"),
-    
-    # Location data - special handling
     vehicle_location = ifelse(is.na(Vehicle.Location), NA_character_, Vehicle.Location),
-    
-    # ID fields - leave as NA (or you might want to generate unique IDs)
     dol_vehicle_id = ifelse(is.na(DOL.Vehicle.ID), NA_character_, DOL.Vehicle.ID),
-    
-    # Census tract - leave as NA or use 0 if it's numeric
-    census_tract = replace_na(X2020.Census.Tract, 0)  # Note: backticks if column name has special chars
-  )
+    census_tract = replace_na(X2020.Census.Tract, 0)
+  ) %>%
+  filter(electric_range > 0)
 ```
 
+```{r}
+sum(ev_data$Electric.Range == 0, na.rm = TRUE)
+```
 
 ```{r}
 # Check for missing values

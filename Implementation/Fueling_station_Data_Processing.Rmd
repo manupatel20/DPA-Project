@@ -5,7 +5,7 @@ library(skimr)
 ```
 
 ```{r}
-data <- read.csv("D:/MS/CSP_571_Data _Preparation _and_Analysis/DPA-Project/Dataset/Alternative_Fueling_Stations.csv", stringsAsFactors = FALSE) # Load the dataset
+data <- read.csv("../Dataset/Alternative_Fueling_Stations.csv", stringsAsFactors = FALSE) # Load the dataset
 ```
 
 ```{r}

@@ -1,0 +1,134 @@
+
+Installing all the packages 
+```{r}
+install.packages(c("tidyverse","data.table","tm","wordcloud","tidytext","textclean", "SnowballC", "textstem", "quanteda", "text2vec","udpipe", "topicmodels"))
+
+```
+
+Loading libraries 
+```{r}
+library(tidyverse)
+library(data.table)
+library(tm)
+library(wordcloud)
+library(tidytext)
+library(textclean)
+library(SnowballC)
+library(textstem)
+library(quanteda)
+library(text2vec)
+library(udpipe)
+library(topicmodels)
+```
+
+Loading cleaned dataset 
+```{r}
+df_ev <- fread("ev_tweets.csv", encoding = "UTF-8")
+```
+
+Viewing dataset structure 
+```{r}
+str(df_ev)
+head(df_ev)
+```
+SENTIMENT DISTRIBUTION
+
+```{r}
+# Count number of positive, neutral, negative tweets
+table(df_ev$sentiment_label)
+
+# Visualize sentiment distribution
+ggplot(df_ev, aes(x = sentiment_label, fill = sentiment_label)) +
+  geom_bar() +
+  theme_minimal() +
+  ggtitle("Sentiment Distribution in EV-Related Tweets")
+```
+TF-IDF VECTORIZATION
+
+```{r}
+# Create a corpus from processed text
+corpus_tweets <- corpus(df_ev$processed_text)
+
+# Tokenize the corpus
+tokens_tweets <- tokens(corpus_tweets, 
+                       remove_punct = TRUE,
+                       remove_numbers = TRUE)
+
+# Remove stopwords
+tokens_tweets <- tokens_remove(tokens_tweets, 
+                              pattern = stopwords("en"))
+
+# Create the document-feature matrix
+dtm <- dfm(tokens_tweets)
+
+# Calculate TF-IDF
+tfidf <- dfm_tfidf(dtm)
+
+# Show top terms by TF-IDF score
+top_terms <- topfeatures(tfidf, 20)
+print(top_terms)
+
+# Visualize top terms
+top_terms_df <- data.frame(
+  word = names(top_terms),
+  score = unname(top_terms)
+)
+
+ggplot(top_terms_df, aes(x = reorder(word, score), y = score)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  ggtitle("Top 20 Terms by TF-IDF Score") +
+  xlab("Term") +
+  ylab("TF-IDF Score")
+```
+
+Frequently discussed keywords 
+```{r}
+# Use processed text for consistency with other analyses
+tokens_df <- df_ev %>%
+  unnest_tokens(word, processed_text) %>%
+  anti_join(stop_words)
+
+# Get top 20 most frequently mentioned words
+top_words <- tokens_df %>%
+  count(word, sort = TRUE) %>%
+  top_n(20, n)
+
+# Plot most frequent words
+ggplot(top_words, aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  ggtitle("Most Frequently Discussed EV-Related Terms") +
+  xlab("Term") +
+  ylab("Frequency")
+```
+
+BRAND MENTIONS COMPARISON
+
+```{r}
+# Define EV brand keywords
+brands <- c("tesla", "rivian", "lucid", "nissan", "chevy", "chevrolet", "ford", "bmw", 
+           "audi", "porsche", "volkswagen", "vw", "toyota", "hyundai", "kia")
+
+# Count occurrences of each brand
+brand_mentions <- tokens_df %>%
+  filter(word %in% brands) %>%
+  count(word, sort = TRUE)
+
+# Add color to brands based on frequency
+brand_colors <- colorRampPalette(c("darkblue", "lightblue"))(nrow(brand_mentions))
+
+# Plot brand mentions
+ggplot(brand_mentions, aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity", aes(fill = reorder(word, n))) +
+  scale_fill_manual(values = brand_colors) +
+  coord_flip() +
+  theme_minimal() +
+  guides(fill = "none") +  # Remove the legend
+  ggtitle("Comparison of EV Brand Mentions") +
+  xlab("Brand") +
+  ylab("Frequency")
+```
+

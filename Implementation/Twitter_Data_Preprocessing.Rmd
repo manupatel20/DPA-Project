@@ -1,0 +1,246 @@
+
+Installing required packages 
+```{r}
+install.packages(c("dplyr", "tidytext", "stringr", "ggplot2", "tm", "textclean", "wordcloud", "tidyr"))
+```
+
+Loading Libraries
+```{r}
+library(dplyr)
+library(tidytext)
+library(stringr)
+library(ggplot2)
+library(tm)
+library(textclean)
+library(wordcloud)
+library(tidyr)
+```
+
+Loading dataset
+```{r}
+sentiment_data <- read.csv("sentiment140.csv", 
+                          header = FALSE, 
+                          col.names = c("sentiment", "id", "date", "flag", "user", "text"),
+                          encoding = "UTF-8",
+                          stringsAsFactors = FALSE)
+```
+
+Displaying initial data structure 
+```{r}
+cat("Original dataset dimensions:", dim(sentiment_data), "\n")
+cat("Sample tweets:\n")
+head(sentiment_data$text, 3)
+```
+Step 1 - Creating EV related terms list 
+```{r}
+primary_ev_terms <- c(
+  # EV general terms that are unambiguous
+  "electric vehicle", "electric car", "ev car", "ev vehicle", "battery electric",
+  "plugin hybrid", "plug-in hybrid", "charging station", "ev charging", 
+  "charging port", "supercharger", "range anxiety", "zero emission vehicle",
+  
+  # Specific EV brands and models - highly reliable indicators
+  "tesla model", "model 3", "model s", "model x", "model y", "cybertruck", 
+  "nissan leaf", "chevy bolt", "chevrolet bolt", "bolt ev", "rivian", "lucid air",
+  "polestar", "kia ev6", "hyundai ioniq", "volkswagen id", "ford mustang mach", "f-150 lightning",
+  "audi e-tron", "porsche taycan", "bmw i3", "bmw i4", "bmw ix", "jaguar i-pace",
+  "mercedes eqc", "volvo xc40 recharge", "mini cooper se", "hummer ev"
+)
+
+secondary_ev_terms <- c(
+  # Terms that are EV-related in context
+  "tesla", "electric", "battery", "charging", "charger", "emissions", "sustainable",
+  "kwh", "kilowatt", "carbon neutral", "charging network", "charge point",
+  
+  # Charging infrastructure 
+  "evgo", "chargepoint", "electrify america", "blink charging", "level 2 charger", "dcfc",
+  "ccs connector", "chademo", "j1772", "fast charger", "home charger", "destination charger",
+  
+  # Policy terms
+  "ev incentive", "ev tax credit", "ev rebate", "clean vehicle", "green vehicle"
+)
+
+context_terms <- c(
+  "car", "vehicle", "drive", "driving", "motor", "automotive", "transport", 
+  "commute", "travel", "mileage", "range", "sustainability", "green", "environment",
+  "power", "energy", "technology", "future", "innovation"
+)
+
+```
+
+Creating regex patterns with word boundaries for accurate matching 
+```{r}
+primary_pattern <- paste0("\\b(", paste(primary_ev_terms, collapse = "|"), ")\\b")
+secondary_pattern <- paste0("\\b(", paste(secondary_ev_terms, collapse = "|"), ")\\b")
+context_pattern <- paste0("\\b(", paste(context_terms, collapse = "|"), ")\\b")
+```
+
+Converting text column to UTF-8 (handle encoding issues)
+```{r}
+sentiment_data$text <- iconv(sentiment_data$text, from = "latin1", to = "UTF-8", sub = "")
+```
+
+Vectorized filtering with confidence scoring 
+```{r}
+sentiment_data <- sentiment_data %>%
+  mutate(
+    text_lower = tolower(text),
+    # Check for primary terms (high confidence)
+    has_primary = str_detect(text_lower, primary_pattern),
+    # Check for secondary terms
+    has_secondary = str_detect(text_lower, secondary_pattern),
+    # Check for context terms
+    has_context = str_detect(text_lower, context_pattern),
+    # Count occurrences of primary terms
+    primary_count = sapply(str_extract_all(text_lower, primary_pattern), length),
+    # Count occurrences of secondary terms
+    secondary_count = sapply(str_extract_all(text_lower, secondary_pattern), length),
+    # Calculate EV relevance score
+    ev_score = primary_count * 2 + 
+               (secondary_count * has_context * 1) +
+               (has_secondary & has_context) * 0.5
+  )
+```
+
+Filtering tweets based on scoring system
+```{r}
+ev_tweets <- sentiment_data %>%
+  filter(has_primary | (has_secondary & has_context & secondary_count >= 1) | ev_score >= 1)
+
+cat("EV-related tweets found:", nrow(ev_tweets), "\n")
+cat("Percentage of original dataset:", round(nrow(ev_tweets)/nrow(sentiment_data)*100, 2), "%\n")
+
+```
+
+Displaying sample of identified EV tweets
+```{r}
+cat("Sample identified EV tweets:\n")
+set.seed(123) # For reproducibility
+sample_tweets <- ev_tweets %>% 
+  sample_n(min(5, nrow(ev_tweets))) %>% 
+  select(text)
+print(sample_tweets)
+```
+
+Step 2 - Improved text preprocessing
+```{r}
+preprocess_tweet <- function(tweet) {
+  # Convert to lowercase
+  tweet <- tolower(tweet)
+  
+  # Remove URLs
+  tweet <- str_replace_all(tweet, "http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", "")
+  
+  # Remove usernames (handles)
+  tweet <- str_replace_all(tweet, "@\\w+", "")
+  
+  # Extract hashtag words (but keep the word)
+  tweet <- str_replace_all(tweet, "#(\\w+)", "\\1")
+  
+  # Remove RT tag
+  tweet <- str_replace_all(tweet, "^rt\\s+", "")
+  
+  # Replace contractions
+  tweet <- replace_contraction(tweet)
+  
+  # Remove numbers (optional - comment out if numbers are important for your analysis)
+  # tweet <- str_replace_all(tweet, "\\d+", "")
+  
+  # Remove non-alphanumeric characters and extra whitespace
+  tweet <- str_replace_all(tweet, "[^[:alnum:][:space:]']", " ")
+  tweet <- str_replace_all(tweet, "\\s+", " ")
+  
+  # Remove leading and trailing whitespace
+  tweet <- str_trim(tweet)
+  
+  return(tweet)
+}
+
+# Apply improved preprocessing to all EV tweets
+ev_tweets$cleaned_text <- sapply(ev_tweets$text, preprocess_tweet)
+```
+
+Step 3: Enhanced tokenization and stopword removal
+
+```{r}
+# Load stopwords
+data(stop_words)
+
+# Expanded custom stopwords that might be common in tweets but not informative
+custom_stopwords <- tibble(
+  word = c("amp", "rt", "via", "just", "like", "will", "can", "now", "get", "got", "one", 
+          "im", "say", "said", "today", "day", "dont", "going", "come", "goes", "went",
+          "u", "ur", "r", "w", "m", "s", "t", "ll", "ve", "isn", "aren", "couldn", 
+          "didn", "doesn", "hadn", "hasn", "haven", "isn", "mightn", "mustn", 
+          "needn", "shouldn", "wasn", "weren", "won", "wouldn", "retweet"),
+  lexicon = "custom"
+)
+
+all_stopwords <- bind_rows(stop_words, custom_stopwords)
+
+```
+
+Installing and loading the snowballC package for stemming (faster than lemmatization)
+```{r}
+if (!requireNamespace("SnowballC", quietly = TRUE)) {
+  cat("Installing SnowballC package...\n")
+  install.packages("SnowballC")
+}
+library(SnowballC)
+```
+
+Tokenizing 
+```{r}
+ev_tweets_processed <- ev_tweets %>%
+  select(id, sentiment, date, user, cleaned_text) %>%
+  unnest_tokens(word, cleaned_text) %>%
+  anti_join(all_stopwords, by = "word") %>%
+  filter(nchar(word) > 2)  # Removing very short tokens
+```
+
+Applying stemming
+```{r}
+ev_tweets_processed <- ev_tweets_processed %>%
+  mutate(stem = wordStem(word, language = "english"))
+
+```
+
+Reconstructing tweets after processing
+```{r}
+processed_tweets <- ev_tweets_processed %>%
+  group_by(id) %>%
+  summarise(
+    processed_text = paste(stem, collapse = " "),
+    original_text = first(ev_tweets$text[ev_tweets$id == first(id)]),
+    sentiment = first(sentiment),
+    date = first(date),
+    user = first(user),
+    ev_score = first(ev_tweets$ev_score[ev_tweets$id == first(id)])
+  )
+```
+
+Step 4: Convert sentiment labels
+```{r}
+processed_tweets <- processed_tweets %>%
+  mutate(sentiment_label = case_when(
+    sentiment == 0 ~ "Negative",
+    sentiment == 2 ~ "Neutral",
+    sentiment == 4 ~ "Positive",
+    TRUE ~ "Unknown"
+  ))
+```
+
+Adding a confidence column for EV relevance
+```{r}
+processed_tweets <- processed_tweets %>%
+  mutate(ev_relevance = case_when(
+    ev_score >= 3 ~ "High",
+    ev_score >= 1.5 ~ "Medium",
+    TRUE ~ "Low"
+  ))
+```
+
+```{r}
+write.csv(processed_tweets, "ev_tweets.csv", row.names = FALSE)
+```
+

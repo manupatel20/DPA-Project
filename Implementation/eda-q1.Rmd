@@ -1,0 +1,1102 @@
+---
+title: "eda-q1"
+output: pdf_document
+date: "2025-04-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+ev_data <- read.csv("../Dataset/pre-processed-EV-dataset.csv")
+```
+
+```{r}
+# Aggregate data by County
+ev_county <- ev_data %>%
+  group_by(county) %>%
+  summarise(EV_Count = n())
+
+# Aggregate data by City
+ev_city <- ev_data %>%
+  group_by(city) %>%
+  summarise(EV_Count = n())
+
+# Aggregate data by Legislative District
+ev_district <- ev_data %>%
+  group_by(legislative_district) %>%
+  summarise(EV_Count = n())
+```
+
+```{r}
+ev_district
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+top_counties <- ev_data %>%
+  count(county, name = "EV_Count") %>%
+  slice_max(EV_Count, n = 20)  # Select top 20 counties with highest EV count
+
+ggplot(top_counties, aes(x = reorder(county, EV_Count), y = EV_Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  # Flip for better readability
+  labs(title = "Top 20 Counties with Highest EV Adoption", x = "County", y = "EV Count") +
+  theme_minimal()
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+top_cities <- ev_data %>%
+  count(city, name = "EV_Count") %>%
+  slice_max(EV_Count, n = 20)  # Select top 20 cities with highest EV count
+
+ggplot(top_cities, aes(x = reorder(city, EV_Count), y = EV_Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  # Flip for better readability
+  labs(title = "Top 20 Cities with Highest EV Adoption", x = "City", y = "EV Count") +
+  theme_minimal()
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+top_ld <- ev_data %>%
+  count(legislative_district, name = "EV_Count") %>%
+  slice_max(EV_Count, n = 20)  # Select top 20 legislative_district with highest EV count
+
+ggplot(top_ld, aes(x = reorder(legislative_district, EV_Count), y = EV_Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  # Flip for better readability
+  labs(title = "Top 20 Cities with Highest EV Adoption", x = "City", y = "EV Count") +
+  theme_minimal()
+```
+
+
+
+
+```{r}
+########   Check data variables available in 'tidycensus'     ###########
+
+library(tidycensus)
+
+# Load list of variables for 2020 ACS 5-year
+acs_vars <- load_variables(2020, "acs5", cache = TRUE)
+
+# View sample
+# View(acs_vars)  # Opens a searchable table in RStudio
+```
+
+
+##################             2                 ###################
+```{r}
+library(tidycensus)
+library(tidyverse)
+
+# Define variable codes (no friendly names)
+vars <- c(
+  "B01003_001",  # Total Population
+  "B23025_003",  # Employed Population
+  "B15003_022",  # Bachelor's Degree or Higher
+  "B19013_001"   # Median Household Income
+)
+
+# Fetch data (geometry included)
+census_data <- get_acs(
+  geography = "tract",
+  variables = vars,
+  state = "WA",
+  year = 2020,
+  geometry = TRUE,
+  output = "wide"  # Automatically pivots to wide format
+)
+
+census_data_clean <- census_data %>%
+  rename(
+    population = B01003_001E,
+    employed_population = B23025_003E,
+    bachelors_or_higher = B15003_022E,
+    median_income = B19013_001E
+  ) %>%
+  select(GEOID, NAME, population, employed_population, 
+         bachelors_or_higher, median_income, geometry)
+
+glimpse(census_data_clean)
+```
+
+
+
+API key - c00131b3556a74bad78bbbb2d648afc4603bd046
+
+```{r}
+library(sf)
+library(tidycensus)
+library(stringr)
+
+# Get Washington State county geometries
+census_api_key("c00131b3556a74bad78bbbb2d648afc4603bd046")  # Set your Census API key
+county_shapes <- get_acs(
+  geography = "county",
+  variables = "B01001_001",  # Total population (for reference)
+  state = "WA",
+  geometry = TRUE
+)
+
+# Step 1: Clean the county names in 'county_shapes' by removing 'County, Washington'
+county_shapes <- county_shapes %>%
+  mutate(NAME_clean = str_remove(NAME, " County, Washington"))
+
+# Merge EV adoption data with county geometries
+county_shapes <- county_shapes %>%
+  left_join(ev_county, by = c("NAME_clean" = "county"))
+
+# Step 1: Calculate centroids for each county (for positioning the text labels)
+county_shapes <- county_shapes %>%
+  mutate(centroid = st_centroid(geometry))
+
+# Step 2: Extract the x and y coordinates of the centroids for text placement
+county_shapes <- county_shapes %>%
+  mutate(centroid_x = st_coordinates(centroid)[, 1],
+         centroid_y = st_coordinates(centroid)[, 2])
+
+# Step 3: Plot choropleth map with labels
+ggplot(county_shapes) +
+  geom_sf(aes(fill = EV_Count)) +
+  scale_fill_gradient(low = "lightblue", high = "blue", na.value = "grey") +
+  labs(title = "EV Adoption by County in Washington State", fill = "EV Count") +
+  theme_minimal() +
+  
+  # Add EV_Count labels at the centroids of each county
+  geom_text(aes(x = centroid_x, y = centroid_y, label = EV_Count), 
+            size = 3,  # Adjust label size
+            color = "black",  # Adjust text color
+            check_overlap = TRUE)  # Prevent overlap of labels
+
+```
+
+
+
+
+```{r}
+ev_data_modified_census_tract <- ev_data %>%
+  mutate(census_tract = as.character(census_tract))
+```
+
+```{r}
+# Prepare EV data - count vehicles by census tract
+ev_counts <- ev_data_modified_census_tract %>%
+  # Ensure census tract is character type
+  mutate(census_tract = as.character(census_tract)) %>%
+  # Count EVs per census tract
+  group_by(census_tract) %>%
+  summarize(EV_Count = n())
+```
+
+```{r}
+# Merge the datasets
+merged_data <- ev_counts %>%
+  left_join(census_data_clean, by = c("census_tract" = "GEOID"))
+
+# Verify the merged data structure
+# glimpse(merged_data)
+
+# Correlation analysis with the correct columns
+cor_results <- cor(
+  merged_data %>% select(EV_Count, population, employed_population, bachelors_or_higher, median_income),
+  use = "pairwise.complete.obs"
+)
+
+print(cor_results)
+```
+
+#############  
+Top 10 and bottom 10 census tracts' EV count
+
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(leaflet)
+
+summary(merged_data$EV_Count)
+
+ev_census_overlay <- merged_data %>%
+  mutate(
+    EV_Count = replace_na(EV_Count, 0),  # Replace NA with 0 for visualization
+    EV_Count = as.numeric(EV_Count)      # Ensure numeric type
+)
+
+# class(ev_census_overlay)
+
+
+# Create color palette based on actual data range
+pal <- colorNumeric(
+  palette = "viridis",
+  domain = ev_census_overlay$EV_Count
+)
+
+top_10 <- ev_census_overlay %>%
+  arrange(desc(EV_Count)) %>%
+  slice_head(n = 10)
+
+bottom_10 <- ev_census_overlay %>%
+  filter(EV_Count > 0 | is.na(EV_Count) == FALSE) %>%  # Optional: remove NA
+  arrange(EV_Count) %>% # Keep only one row per value
+  slice_head(n = 10)
+
+# Transform CRS
+ev_census_overlay <- st_as_sf(ev_census_overlay)
+ev_census_overlay <- st_transform(ev_census_overlay, crs = 4326)
+ev_census_overlay <- ev_census_overlay %>%
+  mutate(
+    fill_color = case_when(
+      census_tract %in% top_10$census_tract ~ "green",
+      census_tract %in% bottom_10$census_tract ~ "red",
+      !is.na(EV_Count) ~ pal(EV_Count),
+      TRUE ~ "#cccccc"  # fallback grey for any edge case
+    )
+  )
+
+# Generate the map
+leaflet(ev_census_overlay %>% st_transform(4326)) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~fill_color,
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",  # Display the tract name
+      "<strong>EV Count:</strong>", ifelse(is.na(EV_Count), "No Data", EV_Count)
+    )
+  ) %>%
+  addLegend(
+    pal = pal,
+    values = ~EV_Count,
+    title = "EV Count per Tract",
+    position = "bottomright"
+  ) %>%
+  addLegend(
+    colors = c("green", "red"),
+    labels = c("Top 10 EV Tracts", "Bottom 10 EV Tracts"),
+    title = "Highlighted Tracts",
+    position = "bottomleft"
+  )
+```
+
+```{r}
+pop_pal <- colorNumeric(
+  palette = "Blues", 
+  domain = ev_census_overlay$population
+)
+
+income_pal <- colorNumeric(
+  palette = "YlOrRd", 
+  domain = ev_census_overlay$median_income
+)
+
+# 6. Create the map with both Population and Income Data
+leaflet(ev_census_overlay %>% st_transform(4326)) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~income_pal(median_income),  # Color by median income
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",  # Display the tract name
+      "<strong>EV Count:</strong>", EV_Count, "<br>",
+      "<strong>Population:</strong>", population, "<br>",
+      "<strong>Median Income:</strong>", median_income
+    )
+  ) %>%
+  addLegend(
+    pal = income_pal,
+    values = ~median_income,
+    title = "Median Income per Tract",
+    position = "bottomleft"
+  )
+```
+
+
+```{r}
+library(RColorBrewer)
+ev_pal <- colorNumeric(
+  palette = "Blues", 
+  domain = ev_census_overlay$EV_Count
+)
+
+
+pop_pal <- colorNumeric(
+  palette = brewer.pal(9, "YlGn"), 
+  domain = ev_census_overlay$population
+)
+
+income_pal <- colorNumeric(
+  palette = "YlOrRd", 
+  domain = ev_census_overlay$median_income
+)
+
+emp_pop_pal <- colorNumeric(
+  palette = brewer.pal(9, "YlGn"), 
+  domain = ev_census_overlay$employed_population
+)
+
+bach_pal <- colorNumeric(
+  palette = "OrRd", 
+  domain = ev_census_overlay$bachelors_or_higher
+)
+
+# Generate the map with layer controls for Population, Income, and EV Count
+leaflet(ev_census_overlay) %>%
+  addTiles() %>%
+
+  # Add Population Layer
+  addPolygons(
+    fillColor = ~pop_pal(population),
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",
+      "<strong>Population:</strong>", population
+    ),
+    group = "Population"
+  ) %>%
+
+  # Add Median Income Layer
+  addPolygons(
+    fillColor = ~income_pal(median_income),
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",
+      "<strong>Median Income:</strong>", median_income
+    ),
+    group = "Median Income"
+  ) %>%
+  
+  
+  # Add Employed Population Layer
+  addPolygons(
+    fillColor = ~emp_pop_pal(employed_population),
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",
+      "<strong>Employed Population:</strong>", employed_population
+    ),
+    group = "Employed Population"
+  ) %>%
+
+  # Add Bachelors or Higher Layer
+  addPolygons(
+    fillColor = ~bach_pal(bachelors_or_higher),
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",
+      "<strong>Bachelors or Higher:</strong>", bachelors_or_higher
+    ),
+    group = "Bachelors or Higher"
+  ) %>%
+  
+
+  # Add EV Count Layer
+  addPolygons(
+    fillColor = ~ev_pal(EV_Count),
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",
+      "<strong>EV Count:</strong>", EV_Count
+    ),
+    group = "EV Count"
+  ) %>%
+
+  # Add Legends for Each Layer
+  addLegend(
+    pal = pop_pal,
+    values = ~population,
+    title = "Population",
+    position = "bottomleft",
+    group = "Population"
+  ) %>%
+  
+  addLegend(
+    pal = income_pal,
+    values = ~median_income,
+    title = "Median Income",
+    position = "bottomright",
+    group = "Median Income"
+  ) %>%
+  
+  # addLegend(
+  #   pal = emp_pop_pal,
+  #   values = ~employed_population,
+  #   title = "Employed Population",
+  #   position = "bottomleft",
+  #   group = "Employed Population"
+  # ) %>%
+  
+  addLegend(
+    pal = bach_pal,
+    values = ~bachelors_or_higher,
+    title = "Bachelor or Higher",
+    position = "topleft",
+    group = "Bachelor or Higher"
+  ) %>%
+
+  addLegend(
+    pal = ev_pal,
+    values = ~EV_Count,
+    title = "EV Count per Tract",
+    position = "topright",
+    group = "EV Count"
+  ) %>%
+
+  # Add Layer Controls to Toggle Between Layers
+  addLayersControl(
+    baseGroups = c("Population", "Median Income", "Bachelor or Higher", "Employed Population", "EV Count"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+
+```{r}
+intersection_layer <- ev_census_overlay %>%
+  filter(population > 0, median_income > 0, EV_Count > 0, employed_population > 0, bachelors_or_higher > 0)
+
+# Create a combined score for visualization
+intersection_layer <- intersection_layer %>%
+  mutate(
+    combined_score = (population / max(population, na.rm = TRUE)) +
+                     (median_income / max(median_income, na.rm = TRUE)) +
+                     (EV_Count / max(EV_Count, na.rm = TRUE)) +
+                      (employed_population / max(employed_population, na.rm = TRUE)) +
+                      (bachelors_or_higher / max(bachelors_or_higher, na.rm = TRUE))
+  )
+
+# Identify top 10 and bottom 10 tracts based on combined score
+top_10_tracts <- intersection_layer %>%
+  arrange(desc(combined_score)) %>%
+  slice_head(n = 10)
+
+bottom_10_tracts <- intersection_layer %>%
+  filter(combined_score > 0 | is.na(combined_score) == FALSE) %>% # Ensure we don't include zeros
+  arrange(combined_score) %>%
+  slice_head(n = 10)
+
+
+# 7. Add highlight category
+intersection_layer <- intersection_layer %>%
+  mutate(highlight_category = case_when(
+    census_tract %in% top_10_tracts$census_tract ~ "Top 10",
+    census_tract %in% bottom_10_tracts$census_tract ~ "Bottom 10",
+    TRUE ~ "Other"
+  ))
+
+# Define color palettes
+# Top 10 will be green, Bottom 10 will be red, Others will use the PuBu gradient
+highlight_pal <- colorFactor(
+  palette = c("red", "green"),  # Make "Other" gray to show underlying color
+  domain = c("Top 10", "Bottom 10")
+)
+
+# Create color palette for the intersection layer (for all tracts)
+intersection_pal <- colorNumeric(
+  palette = "PuBu", 
+  domain = intersection_layer$combined_score
+)
+
+# 9. Generate the map
+leaflet(intersection_layer) %>%
+  addTiles() %>%
+  
+  addPolygons(
+    fillColor = ~intersection_pal(combined_score),
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",
+      "<strong>Population:</strong>", population, "<br>",
+      "<strong>Median Income:</strong>", median_income, "<br>",
+      "<strong>EV Count:</strong>", EV_Count, "<br>",
+      "<strong>Combined Score:</strong>", round(combined_score, 3)
+    ),
+    group = "All Tracts"
+  ) %>%
+  
+  addPolygons(
+    data = intersection_layer %>% filter(highlight_category != "Other"),
+    fillColor = ~highlight_pal(highlight_category),
+    color = "black",
+    weight = 2,
+    smoothFactor = 0.5,
+    opacity = 1,
+    fillOpacity = 0.7,
+    popup = ~paste(
+      "<strong>Census Tract:</strong>", NAME, "<br>",
+      "<strong>Population:</strong>", population, "<br>",
+      "<strong>Median Income:</strong>", median_income, "<br>",
+      "<strong>Employed Population:</strong>", employed_population, "<br>",
+      "<strong>Bachelor or Higher:</strong>", bachelors_or_higher, "<br>",
+      "<strong>EV Count:</strong>", EV_Count, "<br>",
+      "<strong>Combined Score:</strong>", round(combined_score, 3),
+      "<strong>Category:</strong>", highlight_category
+    ),
+    group = "Highlighted Tracts"
+  ) %>%
+  
+  addLegend(
+    pal = intersection_pal,
+    values = ~combined_score,
+    title = "Combined Score",
+    position = "bottomright"
+  ) %>%
+  
+  addLegend(
+    colors = c("green", "red"),
+    labels = c("Top 10 Tracts", "Bottom 10 Tracts"),
+    title = "Highlighted Tracts",
+    position = "bottomleft"
+  ) %>%
+  
+  addLayersControl(
+    overlayGroups = c("All Tracts", "Highlighted Tracts"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+```
+
+
+
+
+
+
+###.     Optional, if it does not provide satisfactory results then we'll remove it
+###      Spatial Regression    ###
+
+```{r}
+library(spdep)
+library(spatialreg)
+library(sf)
+
+# Ensure your data is properly formatted
+analysis_data <- intersection_layer %>% 
+  st_drop_geometry() %>% 
+  select(EV_Count, population, median_income, employed_population, bachelors_or_higher) %>%
+  na.omit()
+
+# Convert to spatial object
+spatial_data <- st_as_sf(intersection_layer) %>% 
+  filter(!is.na(EV_Count), !is.na(population), !is.na(median_income))
+```
+
+
+```{r}
+# Create neighbors list
+coords <- st_centroid(st_geometry(spatial_data))
+knn_neighbors <- knn2nb(knearneigh(coords, k = 5))  # 5 nearest neighbors
+
+# Create spatial weights
+spatial_weights <- nb2listw(knn_neighbors, style = "W")  # Row-standardized weights
+```
+
+```{r}
+# Moran's I test for EV_Count
+moran.test(spatial_data$EV_Count, spatial_weights)
+
+# Moran's I test for residuals of OLS model
+ols_model <- lm(EV_Count ~ population + median_income + employed_population + bachelors_or_higher, 
+               data = spatial_data)
+lm.morantest(ols_model, spatial_weights)
+```
+
+```{r}
+sar_model <- lagsarlm(EV_Count ~ population + median_income + employed_population + bachelors_or_higher,
+                     data = spatial_data, 
+                     listw = spatial_weights)
+summary(sar_model)
+```
+
+
+```{r}
+sem_model <- errorsarlm(EV_Count ~ population + median_income + employed_population + bachelors_or_higher,
+                       data = spatial_data, 
+                       listw = spatial_weights)
+summary(sem_model)
+```
+
+```{r}
+# Compare AIC values
+data.frame(
+  Model = c("OLS", "SAR", "SEM"),
+  AIC = c(AIC(ols_model), AIC(sar_model), AIC(sem_model))
+)
+
+# Likelihood ratio tests
+anova(ols_model, sar_model)
+anova(ols_model, sem_model)
+```
+
+```{r}
+library(ggplot2)
+
+# Create a data frame of coefficients
+coef_df <- data.frame(
+  Variable = names(coef(sar_model))[-1],  # Exclude intercept
+  Coefficient = coef(sar_model)[-1],
+  Model = "Spatial Lag"
+)
+
+# Add SEM coefficients if needed
+coef_df <- rbind(coef_df,
+                data.frame(
+                  Variable = names(coef(sem_model))[-1],
+                  Coefficient = coef(sem_model)[-1],
+                  Model = "Spatial Error"
+                ))
+
+# Plot coefficients
+ggplot(coef_df, aes(x = Variable, y = Coefficient, fill = Model)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  coord_flip() +
+  labs(title = "Spatial Regression Coefficients",
+       subtitle = "Comparison of SAR and SEM Models",
+       x = "Predictor Variable",
+       y = "Coefficient Estimate") +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#######          Q-2           #########
+```{r}
+ev_population_data <- read.csv("../Dataset/cleaned_ev_data.csv")
+summary(ev_population_data)
+```
+
+
+```{r}
+ev_population_data <- ev_population_data %>%
+  mutate(Make.Model = paste(Make, Model, sep = " "))  # Concatenates with space
+
+# Removing data related to 2025 as we just have data of few months
+ev_population_data <- ev_population_data %>%
+  filter(Sale.Year != 2025)
+```
+
+
+```{r}
+# Install packages if not already installed
+required_packages <- c("readr", "dplyr", "lubridate", "ggplot2", "forecast", "prophet")
+installed_packages <- rownames(installed.packages())
+for (pkg in required_packages) {
+  if (!(pkg %in% installed_packages)) {
+    install.packages(pkg)
+  }
+}
+
+# Load libraries
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)
+library(prophet)
+```
+
+
+
+##    Aggregate EV Registrations by Year
+
+```{r}
+ev_yearly <- ev_population_data %>%
+  group_by(Sale.Year) %>%
+  summarise(Total_Registrations = n()) %>%
+  arrange(Sale.Year)
+```
+
+```{r}
+ggplot(ev_yearly, aes(x = factor(Sale.Year), y = Total_Registrations, group = 1)) +
+  geom_line(color = "blue") +
+  geom_point(color = "darkblue") +
+  labs(title = "Total EV Registrations by Year in Washington State",
+       x = "Year",
+       y = "Number of Registrations") +
+  theme_minimal()
+```
+
+## Trends in EV Adoption by Make and Model Over Time
+```{r}
+# Identify top 5 Make+Model combinations
+top_models <- ev_population_data %>%
+  count(Make.Model, sort = TRUE) %>%
+  top_n(5, n) %>%
+  pull(Make.Model)
+
+# Filter data for top models
+ev_top_models <- ev_population_data %>%
+  filter(Make.Model %in% top_models)
+
+# Aggregate registrations by Year and Make_Model
+ev_model_yearly <- ev_top_models %>%
+  group_by(Sale.Year, Make.Model) %>%
+  summarise(Registrations = n()) %>%
+  ungroup()
+
+# Plot trends
+ggplot(ev_model_yearly, aes(x = factor(Sale.Year), y = Registrations, color = Make.Model)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "EV Registrations Over Time by Make and Model",
+       x = "Year",
+       y = "Number of Registrations",
+       color = "Make and Model") +
+  theme_minimal()
+```
+
+## Trends in EV Adoption by Vehicle Type Over Time
+```{r}
+# Aggregate registrations by Year and Electric Vehicle Type
+ev_type_yearly <- ev_population_data %>%
+  group_by(Sale.Year, Clean.Alternative.Fuel.Vehicle.Type) %>%
+  summarise(Registrations = n()) %>%
+  ungroup()
+
+# Plot trends
+ggplot(ev_type_yearly, aes(x = Sale.Year, y = Registrations, color = Clean.Alternative.Fuel.Vehicle.Type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "EV Registrations Over Time by Vehicle Type",
+       x = "Year",
+       y = "Number of Registrations",
+       color = "Vehicle Type") +
+  theme_minimal()
+```
+
+## Compare Growth Rates of Different Make+Model Combinations and Vehicle Types Over Time
+
+```{r}
+# Calculate growth rates for top models
+ev_model_growth <- ev_model_yearly %>%
+  group_by(Make.Model) %>%
+  arrange(Sale.Year) %>%
+  mutate(Growth_Rate = (Registrations - lag(Registrations)) / lag(Registrations) * 100) %>%
+  ungroup()
+
+# Plot growth rates
+ggplot(ev_model_growth, aes(x = Sale.Year, y = Growth_Rate, color = Make.Model)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Year-over-Year Growth Rates by Make and Model",
+       x = "Year",
+       y = "Growth Rate (%)",
+       color = "Make and Model") +
+  theme_minimal()
+```
+
+## Identify the Most Popular Make+Model Combinations for Each Year
+```{r}
+# Determine top Make+Model for each year
+top_models_per_year <- ev_population_data %>%
+  group_by(Sale.Year, Make.Model) %>%
+  summarise(Registrations = n()) %>%
+  arrange(Sale.Year, desc(Registrations)) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+# Display results
+print(top_models_per_year)
+```
+
+
+
+## Time-Series Forecasting for Future EV Registrations Using ARIMA
+```{r}
+# # Create time series object
+# ev_ts <- ts(ev_yearly$Total_Registrations, start = min(ev_yearly$Sale.Year), frequency = 1)
+# 
+# # Fit ARIMA model
+# arima_model <- auto.arima(ev_ts)
+# 
+# # Forecast next 5 years
+# arima_forecast <- forecast(arima_model, h = 5)
+# 
+# # Plot forecast
+# autoplot(arima_forecast) +
+#   labs(title = "ARIMA Forecast of EV Registrations",
+#        x = "Year",
+#        y = "Number of Registrations") +
+#   theme_minimal()
+
+library(forecast)
+library(ggplot2)
+
+# Create time series object
+ev_ts <- ts(ev_yearly$Total_Registrations, start = min(ev_yearly$Sale.Year), frequency = 1)
+
+# Fit ARIMA model
+arima_model <- auto.arima(ev_ts)
+
+# Forecast next 5 years
+arima_forecast <- forecast(arima_model, h = 5)
+
+# Convert forecast to dataframe for ggplot
+fc_df <- data.frame(
+  Year = seq(from = max(ev_yearly$Sale.Year) + 1, by = 1, length.out = 5),
+  Forecast = arima_forecast$mean,
+  Lo80 = arima_forecast$lower[, 1],
+  Hi80 = arima_forecast$upper[, 1],
+  Lo95 = arima_forecast$lower[, 2],
+  Hi95 = arima_forecast$upper[, 2]
+)
+
+# Combine with historical data for plotting
+hist_df <- ev_yearly %>%
+  rename(Year = Sale.Year, Registrations = Total_Registrations)
+
+# Plot
+ggplot() +
+  # Historical data
+  geom_line(data = hist_df, aes(x = Year, y = Registrations), color = "#2c3e50", size = 1.2) +
+  geom_point(data = hist_df, aes(x = Year, y = Registrations), color = "#2980b9", size = 2) +
+
+  # Forecast line
+  geom_line(data = fc_df, aes(x = Year, y = Forecast), color = "#e74c3c", linetype = "dashed", size = 1.2) +
+  geom_ribbon(data = fc_df, aes(x = Year, ymin = Lo95, ymax = Hi95), fill = "#e74c3c", alpha = 0.15) +
+  geom_ribbon(data = fc_df, aes(x = Year, ymin = Lo80, ymax = Hi80), fill = "#e74c3c", alpha = 0.25) +
+  
+  scale_x_continuous(breaks = seq(min(hist_df$Year), max(fc_df$Year), by = 1)) +
+
+  # Titles and theme
+  labs(
+    title = "Forecast of EV Registrations (ARIMA Model)",
+    subtitle = "With 80% and 95% Confidence Intervals",
+    x = "Year",
+    y = "Number of Registrations"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+```
+
+```{r}
+ev_population_data_new <- ev_population_data %>%
+  mutate(
+    Sale.Date = as.Date(Sale.Date, format = "%B %d %Y"),
+    Sale.Month.Year = format(Sale.Date, "%Y-%m")
+  )
+```
+
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+
+ev_population_data <- ev_population_data %>%
+  mutate(
+    Sale.Date = as.Date(Sale.Date, format = "%B %d %Y"),
+    Sale.Month.Year = format(Sale.Date, "%Y-%m")
+  )
+
+# STEP 3: Aggregate registrations per month
+monthly_trends <- ev_population_data %>%
+  group_by(Sale.Month.Year) %>%
+  summarise(EV_Registrations = n()) %>%
+  ungroup()
+
+# STEP 4: Plot the trend
+ggplot(monthly_trends, aes(x = as.Date(paste0(Sale.Month.Year, "-01")), y = EV_Registrations)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "darkblue") +
+  labs(
+    title = "Monthly Trend of EV Registrations",
+    x = "Month-Year",
+    y = "Number of Registrations"
+  ) +
+  scale_x_date(date_labels = "%b %Y", date_breaks = "3 months") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r}
+# STEP 4: Convert to time series (ts object)
+# Define start and frequency (monthly = 12)
+
+monthly_trends <- monthly_trends %>%
+  mutate(Sale.Month.Year = as.Date(paste0(Sale.Month.Year, "-01")))
+
+# start_year <- year(min(monthly_trends$Sale.Month.Year))
+# start_month <- month(min(monthly_trends$Sale.Month.Year))
+
+start_date <- min(monthly_trends$Sale.Month.Year)
+start_year <- year(start_date)
+start_month <- month(start_date)
+
+ev_ts <- ts(monthly_trends$EV_Registrations,
+            start = c(start_year, start_month),
+            frequency = 12)
+
+# STEP 5: Fit ARIMA model
+arima_model <- auto.arima(ev_ts)
+
+# STEP 6: Forecast next 12 months
+forecast_result <- forecast(arima_model, h = 12)
+
+# STEP 7: Plot forecast
+autoplot(forecast_result) +
+  labs(
+    title = "Monthly EV Registration Forecast (ARIMA)",
+    x = "Year",
+    y = "Number of Registrations"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+```{r}
+summary(arima_model)
+```
+
+```{r}
+model_order <- arimaorder(arima_model)  # Get p, d, q
+model_aic <- AIC(arima_model)
+
+ggplot2::autoplot(forecast(arima_model, h = 12)) +
+  labs(
+    title = paste0("Monthly EV Registration Forecast - ARIMA(", 
+                   model_order[1], ",", model_order[2], ",", model_order[3], ")"),
+    subtitle = paste("AIC:", round(model_aic, 2)),
+    x = "Year",
+    y = "EV Registrations"
+  ) +
+  theme_minimal(base_size = 14)
+```
+```
+
+
+
+<!-- ## Time-Series Forecasting Using Prophet -->
+
+<!-- ```{r} -->
+<!-- # # Prepare data for Prophet -->
+<!-- # prophet_data <- ev_yearly %>% -->
+<!-- #   rename(ds = Sale.Year, y = Total_Registrations) %>% -->
+<!-- #   mutate(ds = as.Date(paste0(ds, "-01-01"))) -->
+<!-- #  -->
+<!-- # # Fit Prophet model -->
+<!-- # prophet_model <- prophet(prophet_data) -->
+<!-- #  -->
+<!-- # # Create future dataframe for next 5 years -->
+<!-- # future <- make_future_dataframe(prophet_model, periods = 5, freq = "year") -->
+<!-- #  -->
+<!-- # # Forecast -->
+<!-- # forecast <- predict(prophet_model, future) -->
+<!-- #  -->
+<!-- # # Plot forecast -->
+<!-- # plot(prophet_model, forecast) + -->
+<!-- #   labs(title = "Prophet Forecast of EV Registrations") -->
+
+<!-- library(prophet) -->
+<!-- library(ggplot2) -->
+<!-- library(dplyr) -->
+<!-- library(scales) -->
+
+<!-- # Prepare data for Prophet -->
+<!-- prophet_data <- ev_yearly %>% -->
+<!--   rename(ds = Sale.Year, y = Total_Registrations) %>% -->
+<!--   mutate(ds = as.Date(paste0(ds, "-01-01"))) -->
+
+<!-- # Fit Prophet model -->
+<!-- prophet_model <- prophet(prophet_data) -->
+
+<!-- # Create future dataframe for next 5 years -->
+<!-- future <- make_future_dataframe(prophet_model, periods = 5, freq = "year") -->
+
+<!-- # Forecast -->
+<!-- forecast <- predict(prophet_model, future) -->
+
+<!-- # Merge actual and forecast data for plotting -->
+<!-- forecast_plot <- forecast %>% -->
+<!--   select(ds, yhat, yhat_lower, yhat_upper) %>% -->
+<!--   mutate(ds = as.Date(ds)) %>%     # <-- Ensure it's Date type -->
+<!--   left_join(prophet_data, by = "ds") -->
+
+<!-- # Custom ggplot -->
+<!-- ggplot(forecast_plot, aes(x = ds)) + -->
+<!--   geom_ribbon(aes(ymin = yhat_lower, ymax = yhat_upper), fill = "#cce5ff", alpha = 0.4) + -->
+<!--   geom_line(aes(y = yhat), color = "#0073e6", size = 1.2, linetype = "dashed") + -->
+<!--   geom_point(aes(y = y), color = "#1c4587", size = 2) + -->
+<!--   geom_line(aes(y = y), color = "#1c4587", size = 1) + -->
+<!--   scale_x_date(date_breaks = "1 year", date_labels = "%Y") + -->
+<!--   labs( -->
+<!--     title = "Prophet Forecast of EV Registrations", -->
+<!--     x = "Year", -->
+<!--     y = "Number of Registrations" -->
+<!--   ) + -->
+<!--   theme_minimal(base_size = 14) + -->
+<!--   theme( -->
+<!--     axis.text.x = element_text(angle = 45, hjust = 1), -->
+<!--     plot.title = element_text(face = "bold") -->
+<!--   ) -->
+<!-- ``` -->
+
+
+

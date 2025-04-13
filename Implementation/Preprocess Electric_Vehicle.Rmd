@@ -1,0 +1,125 @@
+
+LOADING LIBRARIES
+```{r}
+library(dplyr)
+library(lubridate)
+library(stringr)
+```
+
+LOADING DATA 
+```{r}
+ev_data <- read.csv("Electric_Vehicle.csv", stringsAsFactors = FALSE)
+```
+
+VIEWING COLUMN NAMES 
+```{r}
+names(ev_data)
+```
+DATA CLEANING 
+
+1. Handle missing values
+```{r}
+ev_data <- ev_data %>%
+  mutate(
+    Sale.Price = ifelse(Sale.Price == 0, NA, Sale.Price),
+    Electric.Range = ifelse(Electric.Range == 0, NA, Electric.Range),
+    Odometer.Reading = ifelse(Odometer.Reading == 0, NA, Odometer.Reading)
+  ) %>%
+  mutate(
+    Electric.Range = ifelse(is.na(Electric.Range), median(Electric.Range, na.rm = TRUE), Electric.Range),
+    Odometer.Reading = ifelse(is.na(Odometer.Reading), median(Odometer.Reading, na.rm = TRUE), Odometer.Reading)
+  )
+```
+
+2. Removing Duplicate 
+```{r}
+ev_data <- ev_data %>%
+  distinct(DOL.Vehicle.ID, .keep_all = TRUE)
+```
+
+3. Standardize text field 
+```{r}
+ev_data <- ev_data %>%
+  mutate(
+    Make = str_to_title(Make),
+    Model = str_to_title(Model),
+    County = str_to_title(County),
+    City = str_to_title(City)
+  )
+```
+
+4. Convert Categorical Columns to Factors
+```{r}
+ev_data <- ev_data %>%
+  mutate(
+    Make = as.factor(Make),
+    Model = as.factor(Model),
+    City = as.factor(City),
+    County = as.factor(County),
+    Transaction.Type = as.factor(Transaction.Type)
+  )
+
+```
+
+5. Validate Numeric Fields & Outlier Filtering
+```{r}
+ev_data <- ev_data %>%
+  filter(Sale.Price > 1000 & Sale.Price < 200000) %>%
+  filter(Model.Year >= 1990 & Model.Year <= year(Sys.Date()))
+
+```
+
+5.Feature Engineering
+```{r}
+ev_data <- ev_data %>%
+  mutate(Transaction.Date = as.Date(Transaction.Date, format = "%B %d %Y"))
+ev_data <- ev_data %>%
+  mutate(
+    Sale.Year = year(Transaction.Date),
+    Sale.Month = month(Transaction.Date),
+    Sale.Day = day(Transaction.Date),
+    Sale.Weekday = weekdays(Transaction.Date)
+  )
+
+```
+
+6. Encoding Binary Field 
+```{r}
+ev_data <- ev_data %>%
+  mutate(Electric.Vehicle.Fee.Paid = ifelse(Electric.Vehicle.Fee.Paid == "Yes", 1, 0))
+```
+
+7. Split by Transaction Type
+```{r}
+new_reg <- ev_data %>% filter(Transaction.Type == "New Registration")
+title_transfer <- ev_data %>% filter(Transaction.Type == "Title Transfer")
+```
+
+8. Dropping extra columns 
+```{r}
+ev_data <- ev_data %>%
+  select(-c(
+    Electric.Vehicle.Fee.Paid,
+    Transportation.Electrification.Fee.Paid,
+    Hybrid.Vehicle.Electrification.Fee.Paid,
+    Base.MSRP
+  ))
+
+```
+
+SAVING THE CLEANED DATA 
+```{r}
+write.csv(ev_data, "cleaned_ev_data.csv", row.names = FALSE)
+```
+
+DIMENSIONS OF CLEANED DATA
+```{r}
+dim(ev_data)
+```
+
+```{r}
+# Count of duplicate VINs
+sum(duplicated(ev_data$VIN..1.10.))
+sum(duplicated(ev_data$DOL.Vehicle.ID))
+```
+

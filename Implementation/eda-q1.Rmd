@@ -598,12 +598,15 @@ leaflet(intersection_layer) %>%
 
 ```
 
+<<<<<<< Updated upstream
 
 
 
 
 
 ###.     Optional, if it does not provide satisfactory results then we'll remove it
+=======
+>>>>>>> Stashed changes
 ###      Spatial Regression    ###
 
 ```{r}
@@ -698,6 +701,7 @@ ggplot(coef_df, aes(x = Variable, y = Coefficient, fill = Model)) +
   theme_minimal()
 ```
 
+<<<<<<< Updated upstream
 
 
 
@@ -860,10 +864,13 @@ top_models_per_year <- ev_population_data %>%
 
 # Display results
 print(top_models_per_year)
+
+summary(ev_data_modified_census_tract)
 ```
 
 
 
+<<<<<<< Updated upstream
 ## Time-Series Forecasting for Future EV Registrations Using ARIMA
 ```{r}
 # # Create time series object
@@ -889,52 +896,65 @@ library(ggplot2)
 ev_ts <- ts(ev_yearly$Total_Registrations, start = min(ev_yearly$Sale.Year), frequency = 1)
 
 # Fit ARIMA model
-arima_model <- auto.arima(ev_ts)
+arima_model <- auto.arima(ev_ts, seasonal = TRUE, stepwise = FALSE, approximation = FALSE)
 
 # Forecast next 5 years
-arima_forecast <- forecast(arima_model, h = 5)
+arima_forecast <- forecast(arima_model, h = 12)
 
-# Convert forecast to dataframe for ggplot
-fc_df <- data.frame(
-  Year = seq(from = max(ev_yearly$Sale.Year) + 1, by = 1, length.out = 5),
-  Forecast = arima_forecast$mean,
-  Lo80 = arima_forecast$lower[, 1],
-  Hi80 = arima_forecast$upper[, 1],
-  Lo95 = arima_forecast$lower[, 2],
-  Hi95 = arima_forecast$upper[, 2]
-)
+autoplot(arima_forecast)
 
-# Combine with historical data for plotting
-hist_df <- ev_yearly %>%
-  rename(Year = Sale.Year, Registrations = Total_Registrations)
-
-# Plot
-ggplot() +
-  # Historical data
-  geom_line(data = hist_df, aes(x = Year, y = Registrations), color = "#2c3e50", size = 1.2) +
-  geom_point(data = hist_df, aes(x = Year, y = Registrations), color = "#2980b9", size = 2) +
-
-  # Forecast line
-  geom_line(data = fc_df, aes(x = Year, y = Forecast), color = "#e74c3c", linetype = "dashed", size = 1.2) +
-  geom_ribbon(data = fc_df, aes(x = Year, ymin = Lo95, ymax = Hi95), fill = "#e74c3c", alpha = 0.15) +
-  geom_ribbon(data = fc_df, aes(x = Year, ymin = Lo80, ymax = Hi80), fill = "#e74c3c", alpha = 0.25) +
-  
-  scale_x_continuous(breaks = seq(min(hist_df$Year), max(fc_df$Year), by = 1)) +
-
-  # Titles and theme
-  labs(
-    title = "Forecast of EV Registrations (ARIMA Model)",
-    subtitle = "With 80% and 95% Confidence Intervals",
-    x = "Year",
-    y = "Number of Registrations"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    plot.title = element_text(face = "bold"),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = "none"
-  )
+# # Convert forecast to dataframe for ggplot
+# fc_df <- data.frame(
+#   Year = seq(from = max(ev_yearly$Sale.Year) + 1, by = 1, length.out = 5),
+#   Forecast = arima_forecast$mean,
+#   Lo80 = arima_forecast$lower[, 1],
+#   Hi80 = arima_forecast$upper[, 1],
+#   Lo95 = arima_forecast$lower[, 2],
+#   Hi95 = arima_forecast$upper[, 2]
+# )
+# 
+# # Combine with historical data for plotting
+# hist_df <- ev_yearly %>%
+#   rename(Year = Sale.Year, Registrations = Total_Registrations)
+# 
+# # Plot
+# ggplot() +
+#   # Historical data
+#   geom_line(data = hist_df, aes(x = Year, y = Registrations), color = "#2c3e50", size = 1.2) +
+#   geom_point(data = hist_df, aes(x = Year, y = Registrations), color = "#2980b9", size = 2) +
+# 
+#   # Forecast line
+#   geom_line(data = fc_df, aes(x = Year, y = Forecast), color = "#e74c3c", linetype = "dashed", size = 1.2) +
+#   geom_ribbon(data = fc_df, aes(x = Year, ymin = Lo95, ymax = Hi95), fill = "#e74c3c", alpha = 0.15) +
+#   geom_ribbon(data = fc_df, aes(x = Year, ymin = Lo80, ymax = Hi80), fill = "#e74c3c", alpha = 0.25) +
+#   
+#   scale_x_continuous(breaks = seq(min(hist_df$Year), max(fc_df$Year), by = 1)) +
+# 
+#   # Titles and theme
+#   labs(
+#     title = "Forecast of EV Registrations (ARIMA Model)",
+#     subtitle = "With 80% and 95% Confidence Intervals",
+#     x = "Year",
+#     y = "Number of Registrations"
+#   ) +
+#   theme_minimal(base_size = 14) +
+#   theme(
+#     plot.title = element_text(face = "bold"),
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     legend.position = "none"
+#   )
 ```
+
+
+
+```{r}
+checkresiduals(arima_model)
+```
+
+```{r}
+accuracy(arima_model)
+```
+
 
 ```{r}
 ev_population_data_new <- ev_population_data %>%
@@ -1098,5 +1118,10 @@ ggplot2::autoplot(forecast(arima_model, h = 12)) +
 <!--   ) -->
 <!-- ``` -->
 
+=======
+
+
+
+>>>>>>> Stashed changes
 
 

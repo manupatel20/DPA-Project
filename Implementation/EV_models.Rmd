@@ -1,0 +1,255 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+```{r}
+# Load required libraries
+library(tidyverse)
+library(dbscan)  # for DBSCAN clustering
+library(car)     # for regression diagnostics
+library(caret)   # for model training and evaluation
+library(sf)      # for spatial analysis
+library(leaflet) # for interactive maps
+library(cluster) # for k-means clustering
+library(factoextra) # for clustering visualization
+
+# Read the datasets
+ev_data <- read.csv("../Dataset/pre-processed-EV-dataset.csv")
+station_data <- read.csv("../Dataset/Preprocessed_Electric_Stations_WA.csv")
+
+# Display the first few rows and structure of the data to verify
+str(ev_data)
+head(ev_data)
+```
+
+# Part 1: Multiple Regression for Electric Range Prediction
+
+```{r}
+# Prepare data for regression
+ev_model_data <- ev_data %>%
+  select(electric_range, electric_vehicle_type, model_year, make, model) %>%
+  filter(!is.na(electric_range)) %>%
+  # Convert categorical variables to factors
+  mutate(
+    electric_vehicle_type = as.factor(electric_vehicle_type),
+    make = as.factor(make),
+    model = as.factor(model)
+  )
+
+# Split data into training and testing sets
+set.seed(123)
+train_index <- createDataPartition(ev_model_data$electric_range, p = 0.8, list = FALSE)
+train_data <- ev_model_data[train_index, ]
+test_data <- ev_model_data[-train_index, ]
+
+# Fit multiple regression model
+ev_model <- lm(electric_range ~ electric_vehicle_type + model_year + make, data = train_data)
+
+# Model summary
+summary(ev_model)
+```
+
+```{r}
+# Model diagnostics
+# Adjust plotting parameters
+options(repr.plot.width=12, repr.plot.height=8)  # Increase plot size
+par(mfrow=c(2,2), mar=c(4,4,2,2))  # Adjust margins: bottom, left, top, right
+
+# Create diagnostic plots
+plot(ev_model)
+
+# Reset plotting parameters
+par(mfrow=c(1,1), mar=c(5,4,4,2)+0.1)  # Reset to default
+
+# Calculate VIF for multicollinearity check
+vif(ev_model)
+```
+
+```{r}
+# Model evaluation on test set
+predictions <- predict(ev_model, newdata = test_data)
+mse <- mean((test_data$electric_range - predictions)^2)
+rmse <- sqrt(mse)
+r2 <- cor(test_data$electric_range, predictions)^2
+
+cat("Model Performance Metrics:\n")
+cat("RMSE:", rmse, "\n")
+cat("R-squared:", r2, "\n")
+```
+
+# Part 2: Clustering Analysis of Charging Stations
+
+## K-means Clustering
+```{r}
+# Prepare coordinates for k-means
+coords <- station_data %>%
+  select(latitude, longitude) %>%
+  na.omit()
+
+# Perform k-means clustering
+set.seed(42)
+kmeans_result <- kmeans(coords, centers = 5)
+coords$cluster <- as.factor(kmeans_result$cluster)
+
+# Visualize k-means clusters
+ggplot(coords, aes(x = longitude, y = latitude, color = cluster)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Geographic Clusters of Charging Stations (K-means)",
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+# Analyze k-means cluster sizes
+kmeans_summary <- coords %>%
+  count(cluster, name = "stations_in_cluster") %>%
+  arrange(desc(stations_in_cluster))
+
+print("K-means Cluster Summary:")
+print(kmeans_summary)
+```
+
+## DBSCAN Clustering
+```{r}
+# Prepare spatial data for DBSCAN
+stations_coords <- station_data %>%
+  select(longitude, latitude) %>%
+  na.omit()
+
+# Scale coordinates for DBSCAN
+stations_scaled <- scale(stations_coords)
+
+# Find optimal eps value using elbow method
+eps_values <- seq(0.1, 1, by = 0.1)
+minPts_values <- c(3, 4, 5)
+
+# Function to evaluate DBSCAN for different parameters
+evaluate_dbscan <- function(eps, minPts) {
+  dbscan_result <- dbscan(stations_scaled, eps = eps, minPts = minPts)
+  n_clusters <- length(unique(dbscan_result$cluster)) - 1  # Excluding noise
+  n_noise <- sum(dbscan_result$cluster == 0)
+  return(c(n_clusters = n_clusters, n_noise = n_noise))
+}
+
+# Try different combinations
+results <- expand.grid(eps = eps_values, minPts = minPts_values) %>%
+  rowwise() %>%
+  mutate(evaluation = list(evaluate_dbscan(eps, minPts))) %>%
+  unnest_wider(evaluation)
+
+# Plot results
+ggplot(results, aes(x = eps, y = n_clusters, color = factor(minPts))) +
+  geom_line() +
+  labs(title = "Number of Clusters vs Eps",
+       color = "MinPts") +
+  theme_minimal()
+
+# Apply DBSCAN clustering
+dbscan_result <- dbscan(stations_scaled, eps = 0.5, minPts = 4)
+
+# Add cluster assignments to original data
+station_data$cluster <- factor(dbscan_result$cluster)
+```
+
+## Compare Clustering Results
+```{r}
+# Create side-by-side maps using leaflet
+# K-means map
+kmeans_map <- leaflet(coords) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    ~longitude, 
+    ~latitude,
+    color = ~colorFactor("Set3", cluster)(cluster),
+    radius = 6,
+    opacity = 0.8,
+    popup = ~paste("K-means Cluster:", cluster)
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colorFactor("Set3", coords$cluster),
+    values = ~cluster,
+    title = "K-means Clusters",
+    opacity = 1
+  )
+
+# DBSCAN map
+station_clusters <- station_data %>%
+  filter(!is.na(cluster)) %>%
+  mutate(cluster = as.factor(cluster))
+
+# Create DBSCAN summary statistics
+dbscan_summary <- station_clusters %>%
+  group_by(cluster) %>%
+  summarise(
+    stations_in_cluster = n(),
+    avg_latitude = mean(latitude),
+    avg_longitude = mean(longitude),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(stations_in_cluster))
+
+dbscan_map <- leaflet(station_clusters) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    ~longitude, 
+    ~latitude,
+    color = ~colorFactor("Set3", cluster)(cluster),
+    radius = 6,
+    opacity = 0.8,
+    popup = ~paste("DBSCAN Cluster:", cluster)
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colorFactor("Set3", station_clusters$cluster),
+    values = ~cluster,
+    title = "DBSCAN Clusters",
+    opacity = 1
+  )
+
+# Display both maps
+print("K-means Clustering Map:")
+kmeans_map
+
+print("DBSCAN Clustering Map:")
+dbscan_map
+
+# Compare cluster statistics
+print("\nComparison of Clustering Results:")
+print("K-means Clusters:")
+print(kmeans_summary)
+print("\nDBSCAN Clusters:")
+print(dbscan_summary)
+
+# Additional cluster comparison visualization
+ggplot() +
+  geom_col(data = kmeans_summary, aes(x = cluster, y = stations_in_cluster, fill = "K-means"), 
+           position = position_dodge(), alpha = 0.7) +
+  geom_col(data = dbscan_summary, aes(x = cluster, y = stations_in_cluster, fill = "DBSCAN"), 
+           position = position_dodge(), alpha = 0.7) +
+  labs(title = "Comparison of Cluster Sizes",
+       x = "Cluster",
+       y = "Number of Stations",
+       fill = "Clustering Method") +
+  theme_minimal()
+```
+
+```{r}
+# Add population density context
+station_density <- station_data %>%
+  group_by(city) %>%
+  summarise(
+    station_count = n(),
+    avg_lat = mean(latitude),
+    avg_lon = mean(longitude)
+  ) %>%
+  arrange(desc(station_count))
+
+# Visualize density
+ggplot(station_density, aes(x = avg_lon, y = avg_lat, size = station_count)) +
+  geom_point(alpha = 0.6) +
+  scale_size_continuous(range = c(2, 10)) +
+  labs(title = "Charging Station Density by Location",
+       size = "Number of Stations") +
+  theme_minimal()
+```
+

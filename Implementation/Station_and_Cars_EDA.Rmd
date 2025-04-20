@@ -2,8 +2,6 @@
 # Load required libraries
 library(tidyverse)
 library(ggplot2)
-library(cluster)
-library(factoextra)
 
 # Read in the datasets
 ev_data <- read.csv("../Dataset/pre-processed-EV-dataset.csv")
@@ -118,31 +116,4 @@ station_city_counts %>%
   coord_flip() +
   labs(title = "Top 10 Cities by Charging Station Count", x = "City", y = "Stations")
 
-```
-
-```{r}
-# 4. KMeans Clustering of Charging Stations
-coords <- station_data %>%
-  select(latitude, longitude) %>%
-  na.omit()
-
-set.seed(42)
-kmeans_result <- kmeans(coords, centers = 5)
-coords$cluster <- as.factor(kmeans_result$cluster)
-
-ggplot(coords, aes(x = longitude, y = latitude, color = cluster)) +
-  geom_point(alpha = 0.6) +
-  labs(title = "Geographic Clusters of Charging Stations", x = "Longitude", y = "Latitude") +
-  theme_minimal()
-
-```
-
-```{r}
-# 5. Station Count per Cluster
-coords %>%
-  count(cluster, name = "stations_in_cluster") %>%
-  ggplot(aes(x = cluster, y = stations_in_cluster, fill = cluster)) +
-  geom_bar(stat = "identity") +
-  labs(title = "Number of Charging Stations per Cluster", x = "Cluster", y = "Station Count") +
-  theme_minimal()
 ```

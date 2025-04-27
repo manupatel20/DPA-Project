@@ -76,7 +76,7 @@ top_ld <- ev_data %>%
 ggplot(top_ld, aes(x = reorder(legislative_district, EV_Count), y = EV_Count)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   coord_flip() +  # Flip for better readability
-  labs(title = "Top 20 Cities with Highest EV Adoption", x = "City", y = "EV Count") +
+  labs(title = "Top 20 legislative_district with Highest EV Adoption", x = "City", y = "EV Count") +
   theme_minimal()
 ```
 
@@ -175,7 +175,7 @@ ggplot(county_shapes) +
   theme_minimal() +
   
   # Add EV_Count labels at the centroids of each county
-  geom_text(aes(x = centroid_x, y = centroid_y, label = EV_Count), 
+  geom_text(aes(x = centroid_x, y = centroid_y, label = paste0(NAME_clean, "\n(", EV_Count, ")")), 
             size = 3,  # Adjust label size
             color = "black",  # Adjust text color
             check_overlap = TRUE)  # Prevent overlap of labels
@@ -265,6 +265,17 @@ ev_census_overlay <- ev_census_overlay %>%
     )
   )
 
+# Calculate centroids for top and bottom tracts
+top_10_centroid <- top_10 %>% 
+  mutate(centroid = st_centroid(geometry)) %>%
+  mutate(lon = st_coordinates(centroid)[,1],
+         lat = st_coordinates(centroid)[,2])
+
+bottom_10_centroid <- bottom_10 %>% 
+  mutate(centroid = st_centroid(geometry)) %>%
+  mutate(lon = st_coordinates(centroid)[,1],
+         lat = st_coordinates(centroid)[,2])
+
 # Generate the map
 leaflet(ev_census_overlay %>% st_transform(4326)) %>%
   addTiles() %>%
@@ -276,9 +287,25 @@ leaflet(ev_census_overlay %>% st_transform(4326)) %>%
     opacity = 1,
     fillOpacity = 0.7,
     popup = ~paste(
-      "<strong>Census Tract:</strong>", NAME, "<br>",  # Display the tract name
+      "<strong>Census Tract:</strong>", NAME, "<br>",
       "<strong>EV Count:</strong>", ifelse(is.na(EV_Count), "No Data", EV_Count)
     )
+  ) %>%
+  # ✅ Add Top 10 tract labels
+  addLabelOnlyMarkers(
+    data = top_10_centroid,
+    lng = ~lon,
+    lat = ~lat,
+    label = ~NAME,
+    labelOptions = labelOptions(noHide = TRUE, direction = 'auto', textOnly = TRUE, style = list("color" = "white", "font-weight" = "bold"))
+  ) %>%
+  # ✅ Add Bottom 10 tract labels
+  addLabelOnlyMarkers(
+    data = bottom_10_centroid,
+    lng = ~lon,
+    lat = ~lat,
+    label = ~NAME,
+    labelOptions = labelOptions(noHide = TRUE, direction = 'auto', textOnly = TRUE, style = list("color" = "white", "font-weight" = "bold"))
   ) %>%
   addLegend(
     pal = pal,
@@ -513,6 +540,19 @@ bottom_10_tracts <- intersection_layer %>%
   arrange(combined_score) %>%
   slice_head(n = 10)
 
+top10_html <- paste0(
+  "<b style='font-size:14px;'>Top 10 Tracts (Combined Score)</b><br>",
+  paste0(seq_len(nrow(top_10_tracts)), ". ",
+         top_10_tracts$NAME, " (", round(top_10_tracts$combined_score, 2), ")",
+         collapse = "<br>")
+)
+
+bottom10_html <- paste0(
+  "<b style='font-size:14px;'>Bottom 10 Tracts (Combined Score)</b><br>",
+  paste0(seq_len(nrow(bottom_10_tracts)), ". ",
+         bottom_10_tracts$NAME, " (", round(bottom_10_tracts$combined_score, 2), ")",
+         collapse = "<br>")
+)
 
 # 7. Add highlight category
 intersection_layer <- intersection_layer %>%
@@ -564,163 +604,51 @@ leaflet(intersection_layer) %>%
     smoothFactor = 0.5,
     opacity = 1,
     fillOpacity = 0.7,
-    popup = ~paste(
-      "<strong>Census Tract:</strong>", NAME, "<br>",
-      "<strong>Population:</strong>", population, "<br>",
-      "<strong>Median Income:</strong>", median_income, "<br>",
-      "<strong>Employed Population:</strong>", employed_population, "<br>",
-      "<strong>Bachelor or Higher:</strong>", bachelors_or_higher, "<br>",
-      "<strong>EV Count:</strong>", EV_Count, "<br>",
-      "<strong>Combined Score:</strong>", round(combined_score, 3),
-      "<strong>Category:</strong>", highlight_category
-    ),
     group = "Highlighted Tracts"
   ) %>%
-  
+
   addLegend(
     pal = intersection_pal,
     values = ~combined_score,
     title = "Combined Score",
-    position = "bottomright"
+    position = "topleft"
   ) %>%
-  
+
   addLegend(
     colors = c("green", "red"),
     labels = c("Top 10 Tracts", "Bottom 10 Tracts"),
     title = "Highlighted Tracts",
     position = "bottomleft"
   ) %>%
-  
+
   addLayersControl(
     overlayGroups = c("All Tracts", "Highlighted Tracts"),
     options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+
+  # ✅ Static Top 10 List
+  addControl(
+    html = paste0(
+      "<div style='background:white;padding:8px;border:1px solid black;
+          max-height:300px;overflow-y:auto;font-size:12px;'>",
+      top10_html,
+      "</div>"
+    ),
+    position = "topright"
+  ) %>%
+
+  # ✅ Static Bottom 10 List
+  addControl(
+    html = paste0(
+      "<div style='background:white;padding:8px;border:1px solid black;
+          max-height:300px;overflow-y:auto;font-size:12px;'>",
+      bottom10_html,
+      "</div>"
+    ),
+    position = "bottomright"
   )
 
 ```
-
-<<<<<<< Updated upstream
-
-
-
-
-
-###.     Optional, if it does not provide satisfactory results then we'll remove it
-=======
->>>>>>> Stashed changes
-###      Spatial Regression    ###
-
-```{r}
-library(spdep)
-library(spatialreg)
-library(sf)
-
-# Ensure your data is properly formatted
-analysis_data <- intersection_layer %>% 
-  st_drop_geometry() %>% 
-  select(EV_Count, population, median_income, employed_population, bachelors_or_higher) %>%
-  na.omit()
-
-# Convert to spatial object
-spatial_data <- st_as_sf(intersection_layer) %>% 
-  filter(!is.na(EV_Count), !is.na(population), !is.na(median_income))
-```
-
-
-```{r}
-# Create neighbors list
-coords <- st_centroid(st_geometry(spatial_data))
-knn_neighbors <- knn2nb(knearneigh(coords, k = 5))  # 5 nearest neighbors
-
-# Create spatial weights
-spatial_weights <- nb2listw(knn_neighbors, style = "W")  # Row-standardized weights
-```
-
-```{r}
-# Moran's I test for EV_Count
-moran.test(spatial_data$EV_Count, spatial_weights)
-
-# Moran's I test for residuals of OLS model
-ols_model <- lm(EV_Count ~ population + median_income + employed_population + bachelors_or_higher, 
-               data = spatial_data)
-lm.morantest(ols_model, spatial_weights)
-```
-
-```{r}
-sar_model <- lagsarlm(EV_Count ~ population + median_income + employed_population + bachelors_or_higher,
-                     data = spatial_data, 
-                     listw = spatial_weights)
-summary(sar_model)
-```
-
-
-```{r}
-sem_model <- errorsarlm(EV_Count ~ population + median_income + employed_population + bachelors_or_higher,
-                       data = spatial_data, 
-                       listw = spatial_weights)
-summary(sem_model)
-```
-
-```{r}
-# Compare AIC values
-data.frame(
-  Model = c("OLS", "SAR", "SEM"),
-  AIC = c(AIC(ols_model), AIC(sar_model), AIC(sem_model))
-)
-
-# Likelihood ratio tests
-anova(ols_model, sar_model)
-anova(ols_model, sem_model)
-```
-
-```{r}
-library(ggplot2)
-
-# Create a data frame of coefficients
-coef_df <- data.frame(
-  Variable = names(coef(sar_model))[-1],  # Exclude intercept
-  Coefficient = coef(sar_model)[-1],
-  Model = "Spatial Lag"
-)
-
-# Add SEM coefficients if needed
-coef_df <- rbind(coef_df,
-                data.frame(
-                  Variable = names(coef(sem_model))[-1],
-                  Coefficient = coef(sem_model)[-1],
-                  Model = "Spatial Error"
-                ))
-
-# Plot coefficients
-ggplot(coef_df, aes(x = Variable, y = Coefficient, fill = Model)) +
-  geom_bar(stat = "identity", position = position_dodge()) +
-  coord_flip() +
-  labs(title = "Spatial Regression Coefficients",
-       subtitle = "Comparison of SAR and SEM Models",
-       x = "Predictor Variable",
-       y = "Coefficient Estimate") +
-  theme_minimal()
-```
-
-<<<<<<< Updated upstream
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -802,9 +730,9 @@ ev_model_yearly <- ev_top_models %>%
   ungroup()
 
 # Plot trends
-ggplot(ev_model_yearly, aes(x = factor(Sale.Year), y = Registrations, color = Make.Model)) +
-  geom_line() +
-  geom_point() +
+ggplot(ev_model_yearly, aes(x = Sale.Year, y = Registrations, color = Make.Model)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
   labs(title = "EV Registrations Over Time by Make and Model",
        x = "Year",
        y = "Number of Registrations",

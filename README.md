@@ -42,10 +42,10 @@ This project explores the patterns, perceptions, and policy implications of elec
 
 ## 📊 Datasets
 
-- [Electric Vehicle Population Data](https://data.wa.gov/Transportation/Electric-Vehicle-Population-Data/f6w7-q2d2)
+- [Electric Vehicle Population Data](https://data.wa.gov/Transportation/Electric-Vehicle-Population-Data/f6w7-q2d2/about_data)
 - [Alternative Fueling Stations Data](https://data-usdot.opendata.arcgis.com/datasets/usdot::alternative-fueling-stations/about)
 - [Electric Vehicle Title and Registration Activity](https://data.wa.gov/Transportation/Electric-Vehicle-Title-and-Registration-Activity/rpr4-cgyd/about_data)
-- [Sentiment140 Dataset (tweets)](https://www.kaggle.com/datasets/kazanova/sentiment140)
+- [Sentiment140 Dataset (tweets)](https://www.kaggle.com/datasets/kazanova/sentiment140/data)
 
 > **Note:** Sentiment analysis was attempted but not pursued due to low relevance in tweet data quality.
 
